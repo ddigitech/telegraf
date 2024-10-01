@@ -23,6 +23,12 @@ var (
 
 type PID int32
 
+type collectionConfig struct {
+	solarisMode bool
+	tagging     map[string]bool
+	features    map[string]bool
+}
+
 type Procstat struct {
 	PidFinder              string `toml:"pid_finder"`
 	PidFile                string `toml:"pid_file"`
@@ -38,14 +44,15 @@ type Procstat struct {
 	PidTag                 bool
 	WinService             string `toml:"win_service"`
 	Mode                   string
+	Properties             []string `toml:"properties"`
 
-	solarisMode bool
-
-	finder PIDFinder
-
+	cfg             collectionConfig
+	solarisMode     bool
+	finder          PIDFinder
 	createPIDFinder func() (PIDFinder, error)
 	procs           map[PID]Process
-	createProcess   func(PID) (Process, error)
+
+	createProcess func(PID) (Process, error)
 }
 
 var sampleConfig = `
@@ -287,6 +294,9 @@ func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator, t time.Time
 		fields[prefix+"memory_data"] = mem.Data
 		fields[prefix+"memory_stack"] = mem.Stack
 		fields[prefix+"memory_locked"] = mem.Locked
+	}
+	if p.cfg.features["mmap"] {
+		collectMemmap(proc, prefix, fields)
 	}
 
 	memPerc, err := proc.MemoryPercent()
@@ -563,6 +573,13 @@ func (p *Procstat) winServicePIDs() ([]PID, error) {
 func (p *Procstat) Init() error {
 	if strings.ToLower(p.Mode) == "solaris" {
 		p.solarisMode = true
+	}
+	// Convert collection properties
+	p.cfg.features = make(map[string]bool, len(p.Properties))
+	for _, prop := range p.Properties {
+		if prop == "mmap" {
+			p.cfg.features[prop] = true
+		}
 	}
 
 	return nil

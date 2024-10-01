@@ -100,8 +100,9 @@ type testProc struct {
 	tags map[string]string
 }
 
-func newTestProc(_ PID) (Process, error) {
+func newTestProc(pid PID) (Process, error) {
 	proc := &testProc{
+		pid:  pid,
 		tags: make(map[string]string),
 	}
 	return proc, nil
@@ -129,6 +130,14 @@ func (p *testProc) IOCounters() (*process.IOCountersStat, error) {
 
 func (p *testProc) MemoryInfo() (*process.MemoryInfoStat, error) {
 	return &process.MemoryInfoStat{}, nil
+}
+
+func (p *testProc) MemoryMaps(_ bool) (*[]process.MemoryMapsStat, error) {
+	return &[]process.MemoryMapsStat{
+		{
+			Swap: 1024,
+		},
+	}, nil
 }
 
 func (p *testProc) Name() (string, error) {
@@ -179,6 +188,7 @@ func TestGather_CreateProcessErrorOk(t *testing.T) {
 
 	p := Procstat{
 		Exe:             exe,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess: func(PID) (Process, error) {
 			return nil, fmt.Errorf("createProcess error")
@@ -205,6 +215,7 @@ func TestGather_ProcessName(t *testing.T) {
 	p := Procstat{
 		Exe:             exe,
 		ProcessName:     "custom_name",
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -219,6 +230,7 @@ func TestGather_NoProcessNameUsesReal(t *testing.T) {
 
 	p := Procstat{
 		Exe:             exe,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -232,6 +244,7 @@ func TestGather_NoPidTag(t *testing.T) {
 
 	p := Procstat{
 		Exe:             exe,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -246,6 +259,7 @@ func TestGather_PidTag(t *testing.T) {
 	p := Procstat{
 		Exe:             exe,
 		PidTag:          true,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -260,6 +274,7 @@ func TestGather_Prefix(t *testing.T) {
 	p := Procstat{
 		Exe:             exe,
 		Prefix:          "custom_prefix",
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -272,6 +287,7 @@ func TestGather_Exe(t *testing.T) {
 
 	p := Procstat{
 		Exe:             exe,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -286,6 +302,7 @@ func TestGather_User(t *testing.T) {
 
 	p := Procstat{
 		User:            user,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -300,6 +317,7 @@ func TestGather_Pattern(t *testing.T) {
 
 	p := Procstat{
 		Pattern:         pattern,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -324,6 +342,7 @@ func TestGather_PidFile(t *testing.T) {
 
 	p := Procstat{
 		PidFile:         pidfile,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   newTestProc,
 	}
@@ -339,6 +358,7 @@ func TestGather_PercentFirstPass(t *testing.T) {
 	p := Procstat{
 		Pattern:         "foo",
 		PidTag:          true,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   NewProc,
 	}
@@ -355,6 +375,7 @@ func TestGather_PercentSecondPass(t *testing.T) {
 	p := Procstat{
 		Pattern:         "foo",
 		PidTag:          true,
+		Properties:      []string{"mmap"},
 		createPIDFinder: pidFinder([]PID{pid}),
 		createProcess:   NewProc,
 	}
@@ -433,4 +454,44 @@ func TestGather_SameTimestamps(t *testing.T) {
 	procstatLookup, _ := acc.Get("procstat_lookup")
 
 	require.Equal(t, procstat.Time, procstatLookup.Time)
+}
+
+func TestGather_MemorySwap(t *testing.T) {
+	var acc testutil.Accumulator
+	pid := PID(os.Getpid())
+
+	p := Procstat{
+		Exe:             exe,
+		Properties:      []string{"mmap"},
+		createPIDFinder: pidFinder([]PID{pid}),
+		createProcess:   newTestProc,
+	}
+
+	require.NoError(t, acc.GatherError(p.Gather))
+
+	require.True(t, acc.HasIntField("procstat", "memory_swap"))
+
+	fields := acc.Metrics[0].Fields
+	require.Equal(t, int64(1024), fields["memory_swap"])
+}
+
+func TestGather_NoMemorySwap(t *testing.T) {
+	var acc testutil.Accumulator
+
+	p := Procstat{
+		Exe:             exe,
+		createPIDFinder: pidFinder([]PID{pid}),
+		createProcess: func(PID) (Process, error) {
+			proc := &testProc{
+				pid: pid,
+				tags: map[string]string{
+					"exe": exe,
+				},
+			}
+			return proc, nil
+		},
+	}
+
+	require.NoError(t, acc.GatherError(p.Gather))
+	require.False(t, acc.HasField("procstat", "memory_swap"))
 }

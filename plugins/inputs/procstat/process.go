@@ -11,11 +11,11 @@ import (
 type Process interface {
 	PID() PID
 	Tags() map[string]string
-
 	PageFaults() (*process.PageFaultsStat, error)
 	IOCounters() (*process.IOCountersStat, error)
 	MemoryInfo() (*process.MemoryInfoStat, error)
 	Name() (string, error)
+	MemoryMaps(bool) (*[]process.MemoryMapsStat, error)
 	Cmdline() (string, error)
 	NumCtxSwitches() (*process.NumCtxSwitchesStat, error)
 	NumFDs() (int32, error)
